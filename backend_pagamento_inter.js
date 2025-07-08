@@ -22,7 +22,8 @@ app.post('/pagar', async (req, res) => {
     // 1. Gerar token
     const tokenResp = await axios.post(
       'https://cdpj.partners.bancointer.com.br/oauth/v2/token',
-      'grant_type=client_credentials&client_id=' + process.env.CLIENT_ID,
+      `grant_type=client_credentials&client_id=${process.env.CLIENT_ID}&client_secret=${process.env.CLIENT_SECRET}`
+,
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
