@@ -7,19 +7,21 @@ const bodyParser = require('body-parser');
 const app = express();
 app.use(bodyParser.json());
 
-// Lê os certificados para autenticação mTLS
+// Lê os certificados
 const cert = fs.readFileSync('./Inter API_Certificado.crt');
 const key = fs.readFileSync('./Inter API_Chave.key');
 
+// HTTPS agent com mTLS
 const agent = new https.Agent({
   cert,
   key,
   rejectUnauthorized: false
 });
 
+// Rota de pagamento
 app.post('/pagar', async (req, res) => {
   try {
-    // 1. Gerar token OAuth
+    // 1. Obter token OAuth
     const tokenResp = await axios.post(
       'https://cdpj.partners.bancointer.com.br/oauth/v2/token',
       `grant_type=client_credentials&client_id=${process.env.CLIENT_ID}&client_secret=${process.env.CLIENT_SECRET}`,
@@ -33,11 +35,12 @@ app.post('/pagar', async (req, res) => {
 
     const accessToken = tokenResp.data.access_token;
 
-    // 2. Realizar pagamentos por chave Pix
+    // 2. Pagamentos via chave Pix
     const results = [];
+
     for (const item of req.body.pagamentos) {
       const pagamentoPix = await axios.post(
-        'https://cdpj.partners.bancointer.com.br/pix/v2/pagamentos',
+        'https://cdpj.partners.bancointer.com.br/banking/v2/pix/pagamentos',
         {
           chavePix: {
             valor: item.valor,
@@ -77,6 +80,7 @@ app.post('/pagar', async (req, res) => {
   }
 });
 
+// Inicializa o servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
