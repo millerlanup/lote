@@ -32,16 +32,21 @@ app.post('/pagar', async (req, res) => {
 
     const accessToken = tokenResp.data.access_token;
 
-    // 2. Fazer pagamento
+    // 2. Fazer pagamento Pix por chave para cada item
     const results = [];
     for (const item of req.body.pagamentos) {
-      const pagamento = await axios.post(
-        'https://cdpj.partners.bancointer.com.br/pix-automatico/payments',
+      const pagamentoPix = await axios.post(
+        'https://cdpj.partners.bancointer.com.br/pix/pagamento',
         {
-          valor: item.valor,
-          chave: item.chave,
-          descricao: item.descricao,
-          tipoChave: item.tipoChave
+          chavePix: {
+            valor: item.valor,
+            dataPagamento: item.dataPagamento || new Date().toISOString().slice(0, 10),
+            descricao: item.descricao || "Pagamento Pix via API",
+            destinatario: {
+              tipo: "CHAVE",
+              chave: item.chave
+            }
+          }
         },
         {
           headers: {
@@ -51,7 +56,7 @@ app.post('/pagar', async (req, res) => {
           httpsAgent: agent
         }
       );
-      results.push({ chave: item.chave, status: 'ok', response: pagamento.data });
+      results.push({ chave: item.chave, status: 'ok', response: pagamentoPix.data });
     }
 
     res.json({ status: 'success', results });
