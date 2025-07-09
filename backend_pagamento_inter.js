@@ -3,14 +3,12 @@ const https = require('https');
 const fs = require('fs');
 const axios = require('axios');
 const bodyParser = require('body-parser');
-const { v4: uuidv4 } = require('uuid'); // Para gerar x-id-idempotente
-
-require('dotenv').config();
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 app.use(bodyParser.json());
 
-// Certificados (coloque os arquivos no mesmo diretório)
+// Certificados
 const cert = fs.readFileSync('./Inter API_Certificado.crt');
 const key = fs.readFileSync('./Inter API_Chave.key');
 
@@ -22,7 +20,6 @@ const httpsAgent = new https.Agent({
 
 app.post('/pagar', async (req, res) => {
   try {
-    // 1. Obter token OAuth2
     const tokenResponse = await axios.post(
       'https://cdpj.partners.bancointer.com.br/oauth/v2/token',
       `client_id=${process.env.CLIENT_ID}&client_secret=${process.env.CLIENT_SECRET}&scope=pagamento-pix.write&grant_type=client_credentials`,
@@ -38,7 +35,6 @@ app.post('/pagar', async (req, res) => {
 
     const results = [];
 
-    // 2. Para cada pagamento no corpo da requisição
     for (const item of req.body.pagamentos) {
       const corpoPix = {
         valor: item.valor.toFixed(2),
