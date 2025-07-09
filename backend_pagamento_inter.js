@@ -37,7 +37,7 @@ app.post('/pagar', async (req, res) => {
     const results = [];
     for (const item of req.body.pagamentos) {
       const pagamentoPix = await axios.post(
-        'https://cdpj.partners.bancointer.com.br/banking/v2/pix/pagamentos',
+        'https://cdpj.partners.bancointer.com.br/pix/v2/pagamentos',
         {
           chavePix: {
             valor: item.valor,
