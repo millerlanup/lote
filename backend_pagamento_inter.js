@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const app = express();
 app.use(bodyParser.json());
 
+// Lê os certificados para autenticação mTLS
 const cert = fs.readFileSync('./Inter API_Certificado.crt');
 const key = fs.readFileSync('./Inter API_Chave.key');
 
@@ -18,7 +19,7 @@ const agent = new https.Agent({
 
 app.post('/pagar', async (req, res) => {
   try {
-    // 1. Gerar token
+    // 1. Gerar token OAuth
     const tokenResp = await axios.post(
       'https://cdpj.partners.bancointer.com.br/oauth/v2/token',
       `grant_type=client_credentials&client_id=${process.env.CLIENT_ID}&client_secret=${process.env.CLIENT_SECRET}`,
@@ -32,11 +33,11 @@ app.post('/pagar', async (req, res) => {
 
     const accessToken = tokenResp.data.access_token;
 
-    // 2. Fazer pagamento Pix por chave para cada item
+    // 2. Realizar pagamentos por chave Pix
     const results = [];
     for (const item of req.body.pagamentos) {
       const pagamentoPix = await axios.post(
-        'https://cdpj.partners.bancointer.com.br/pix/api/v2/pagamentos',
+        'https://cdpj.partners.bancointer.com.br/banking/v2/pix/pagamentos',
         {
           chavePix: {
             valor: item.valor,
@@ -50,13 +51,18 @@ app.post('/pagar', async (req, res) => {
         },
         {
           headers: {
-            'Authorization': 'Bearer ' + accessToken,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
           httpsAgent: agent
         }
       );
-      results.push({ chave: item.chave, status: 'ok', response: pagamentoPix.data });
+
+      results.push({
+        chave: item.chave,
+        status: 'ok',
+        response: pagamentoPix.data
+      });
     }
 
     res.json({ status: 'success', results });
