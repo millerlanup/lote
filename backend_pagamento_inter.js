@@ -5,6 +5,7 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 const PDFDocument = require('pdfkit');
+const { google } = require('googleapis');
 
 const app = express();
 app.use(bodyParser.json());
@@ -18,12 +19,74 @@ const httpsAgent = new https.Agent({
   rejectUnauthorized: false
 });
 
+// Configuração Google Drive
+let drive = null;
+try {
+  const auth = new google.auth.GoogleAuth({
+    keyFile: './google-credentials.json',
+    scopes: ['https://www.googleapis.com/auth/drive.file']
+  });
+  
+  drive = google.drive({ version: 'v3', auth });
+  console.log('Google Drive configurado com sucesso');
+} catch (error) {
+  console.error('Erro ao configurar Google Drive:', error.message);
+  console.log('Continuando sem Google Drive...');
+}
+
 // Função para formatar valores em Real
 function formatarMoeda(valor) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
   }).format(valor);
+}
+
+// Função para salvar no Google Drive
+async function salvarComprovanteDrive(pdfBuffer, nomeArquivo) {
+  if (!drive) {
+    console.log('Google Drive não configurado');
+    return null;
+  }
+  
+  try {
+    const fileMetadata = {
+      name: nomeArquivo,
+      mimeType: 'application/pdf'
+    };
+    
+    // Adicionar à pasta se configurada
+    if (process.env.GOOGLE_DRIVE_FOLDER_ID) {
+      fileMetadata.parents = [process.env.GOOGLE_DRIVE_FOLDER_ID];
+    }
+    
+    const media = {
+      mimeType: 'application/pdf',
+      body: require('stream').Readable.from(pdfBuffer)
+    };
+    
+    const response = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: 'id, name, webViewLink, webContentLink'
+    });
+    
+    // Tornar o arquivo público
+    await drive.permissions.create({
+      fileId: response.data.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone'
+      }
+    });
+    
+    console.log('Arquivo salvo no Drive:', response.data.name);
+    return response.data;
+    
+  } catch (error) {
+    console.error('Erro ao salvar no Drive:', error);
+    return null;
+  }
 }
 
 // Função para gerar PDF do comprovante
@@ -175,13 +238,35 @@ app.post('/pagar', async (req, res) => {
         );
         
         // Gerar comprovante PDF
-        let comprovanteBase64 = null;
+        let comprovanteInfo = {
+          gerado: false,
+          base64: null,
+          nome: null,
+          googleDrive: null
+        };
+        
         try {
           const pdfBuffer = await gerarComprovantePDF(item, pagamentoPix.data);
-          comprovanteBase64 = pdfBuffer.toString('base64');
-          console.log('Comprovante PDF gerado com sucesso');
+          const nomeArquivo = `Comprovante_PIX_${item.chave}_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+          
+          comprovanteInfo.gerado = true;
+          comprovanteInfo.base64 = pdfBuffer.toString('base64');
+          comprovanteInfo.nome = nomeArquivo;
+          
+          // Salvar no Google Drive
+          const driveFile = await salvarComprovanteDrive(pdfBuffer, nomeArquivo);
+          if (driveFile) {
+            comprovanteInfo.googleDrive = {
+              id: driveFile.id,
+              nome: driveFile.name,
+              link: driveFile.webViewLink,
+              download: driveFile.webContentLink
+            };
+            console.log('Comprovante salvo no Drive com sucesso');
+          }
+          
         } catch (pdfError) {
-          console.error('Erro ao gerar PDF:', pdfError);
+          console.error('Erro ao gerar/salvar PDF:', pdfError);
         }
         
         results.push({
@@ -189,11 +274,7 @@ app.post('/pagar', async (req, res) => {
           valor: item.valor,
           status: 'sucesso',
           response: pagamentoPix.data,
-          comprovante: {
-            gerado: comprovanteBase64 ? true : false,
-            base64: comprovanteBase64,
-            nome: comprovanteBase64 ? `Comprovante_PIX_${item.chave}_${new Date().toISOString().split('T')[0]}.pdf` : null
-          }
+          comprovante: comprovanteInfo
         });
         
       } catch (error) {
@@ -237,12 +318,14 @@ app.get('/health', (req, res) => {
       CLIENT_ID: process.env.CLIENT_ID ? '✓' : '✗',
       CLIENT_SECRET: process.env.CLIENT_SECRET ? '✓' : '✗',
       CONTA_CORRENTE: process.env.CONTA_CORRENTE ? '✓' : '✗',
-      PDF: 'enabled'
+      PDF: 'enabled',
+      GOOGLE_DRIVE: drive ? '✓' : '✗',
+      GOOGLE_DRIVE_FOLDER: process.env.GOOGLE_DRIVE_FOLDER_ID ? '✓' : '✗'
     }
   });
 });
 
-// Endpoint para download do comprovante
+// Endpoint para gerar comprovante sob demanda
 app.post('/comprovante', async (req, res) => {
   try {
     const { dadosPagamento, dadosTransacao } = req.body;
@@ -266,4 +349,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Geração de PDF: Habilitada`);
+  console.log(`Google Drive: ${drive ? 'Configurado' : 'Não configurado'}`);
 });
