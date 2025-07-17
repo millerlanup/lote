@@ -22,11 +22,10 @@ const httpsAgent = new https.Agent({
 // Configuração Google Drive
 let drive = null;
 try {
-  const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-const auth = new google.auth.GoogleAuth({
-  credentials: credentials,
-  scopes: ['https://www.googleapis.com/auth/drive.file']
-});
+  const auth = new google.auth.GoogleAuth({
+    keyFile: './google-credentials.json',
+    scopes: ['https://www.googleapis.com/auth/drive.file']
+  });
   
   drive = google.drive({ version: 'v3', auth });
   console.log('Google Drive configurado com sucesso');
