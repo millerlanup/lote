@@ -54,13 +54,8 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
     
     console.log('PDF enviado para Cloudinary:', result.public_id);
     
-    // Criar URLs customizadas
-    const viewUrl = result.secure_url.replace('/upload/', '/upload/fl_attachment:false/');
-    const downloadUrl = result.secure_url;
-    
     return {
-      url: viewUrl,
-      download: downloadUrl,
+      url: result.secure_url,
       publicId: result.public_id,
       size: result.bytes
     };
@@ -239,8 +234,8 @@ app.post('/pagar', async (req, res) => {
             comprovanteInfo.gerado = true;
             comprovanteInfo.base64 = pdfBuffer.toString('base64');
             comprovanteInfo.nome = nomeArquivo;
-            comprovanteInfo.link = cloudinaryResult.url; // URL para visualizar
-            comprovanteInfo.download = cloudinaryResult.download + '?dl=true'; // URL para download
+            comprovanteInfo.link = cloudinaryResult.url;
+            comprovanteInfo.download = cloudinaryResult.url;
             comprovanteInfo.cloudinary = cloudinaryResult;
             
             console.log('Comprovante salvo no Cloudinary com sucesso');
