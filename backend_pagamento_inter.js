@@ -5,9 +5,17 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 const PDFDocument = require('pdfkit');
+const cloudinary = require('cloudinary').v2;
 
 const app = express();
 app.use(bodyParser.json());
+
+// Configurar Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // Certificados
 const cert = fs.readFileSync('./Inter API_Certificado.crt');
@@ -18,15 +26,41 @@ const httpsAgent = new https.Agent({
   rejectUnauthorized: false
 });
 
-// Armazenar PDFs temporariamente na memória
-const pdfStorage = new Map();
-
 // Função para formatar valores em Real
 function formatarMoeda(valor) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
   }).format(valor);
+}
+
+// Função para fazer upload do PDF para Cloudinary
+async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
+  try {
+    // Converter buffer para base64
+    const base64 = pdfBuffer.toString('base64');
+    const dataUri = `data:application/pdf;base64,${base64}`;
+    
+    // Upload para Cloudinary
+    const result = await cloudinary.uploader.upload(dataUri, {
+      resource_type: 'raw',
+      public_id: nomeArquivo.replace('.pdf', ''),
+      folder: 'comprovantes-pix',
+      type: 'upload',
+      overwrite: true
+    });
+    
+    console.log('PDF enviado para Cloudinary:', result.public_id);
+    
+    return {
+      url: result.secure_url,
+      publicId: result.public_id,
+      size: result.bytes
+    };
+  } catch (error) {
+    console.error('Erro ao enviar para Cloudinary:', error);
+    return null;
+  }
 }
 
 // Função para gerar PDF do comprovante
@@ -183,38 +217,40 @@ app.post('/pagar', async (req, res) => {
           base64: null,
           nome: null,
           link: null,
-          download: null
+          download: null,
+          cloudinary: null
         };
         
         try {
           const pdfBuffer = await gerarComprovantePDF(item, pagamentoPix.data);
-          const pdfId = uuidv4();
           const nomeArquivo = `Comprovante_PIX_${item.chave}_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
           
-          // Armazenar temporariamente
-          pdfStorage.set(pdfId, {
-            buffer: pdfBuffer,
-            nome: nomeArquivo,
-            criado: new Date()
-          });
+          // Upload para Cloudinary
+          const cloudinaryResult = await uploadPDFCloudinary(pdfBuffer, nomeArquivo);
           
-          // Limpar PDFs antigos (mais de 1 hora)
-          for (const [id, pdf] of pdfStorage.entries()) {
-            if (new Date() - pdf.criado > 3600000) {
-              pdfStorage.delete(id);
-            }
+          if (cloudinaryResult) {
+            comprovanteInfo.gerado = true;
+            comprovanteInfo.base64 = pdfBuffer.toString('base64');
+            comprovanteInfo.nome = nomeArquivo;
+            comprovanteInfo.link = cloudinaryResult.url;
+            comprovanteInfo.download = cloudinaryResult.url;
+            comprovanteInfo.cloudinary = cloudinaryResult;
+            
+            console.log('Comprovante salvo no Cloudinary com sucesso');
+          } else {
+            // Fallback: usar armazenamento temporário
+            const pdfId = uuidv4();
+            comprovanteInfo.gerado = true;
+            comprovanteInfo.base64 = pdfBuffer.toString('base64');
+            comprovanteInfo.nome = nomeArquivo;
+            comprovanteInfo.link = `https://pagamento-inter.onrender.com/comprovante/${pdfId}`;
+            comprovanteInfo.download = `https://pagamento-inter.onrender.com/comprovante/${pdfId}?download=true`;
+            
+            console.log('Usando armazenamento temporário (Cloudinary falhou)');
           }
           
-          comprovanteInfo.gerado = true;
-          comprovanteInfo.base64 = pdfBuffer.toString('base64');
-          comprovanteInfo.nome = nomeArquivo;
-          comprovanteInfo.link = `https://pagamento-inter.onrender.com/comprovante/${pdfId}`;
-          comprovanteInfo.download = `https://pagamento-inter.onrender.com/comprovante/${pdfId}?download=true`;
-          
-          console.log('Comprovante PDF gerado com sucesso');
-          
         } catch (pdfError) {
-          console.error('Erro ao gerar PDF:', pdfError);
+          console.error('Erro ao gerar/enviar PDF:', pdfError);
         }
         
         results.push({
@@ -257,7 +293,32 @@ app.post('/pagar', async (req, res) => {
   }
 });
 
-// Endpoint para servir o PDF
+// Endpoint de saúde
+app.get('/health', (req, res) => {
+  const cloudinaryConfigured = !!(
+    process.env.CLOUDINARY_CLOUD_NAME && 
+    process.env.CLOUDINARY_API_KEY && 
+    process.env.CLOUDINARY_API_SECRET
+  );
+  
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment: {
+      CLIENT_ID: process.env.CLIENT_ID ? '✓' : '✗',
+      CLIENT_SECRET: process.env.CLIENT_SECRET ? '✓' : '✗',
+      CONTA_CORRENTE: process.env.CONTA_CORRENTE ? '✓' : '✗',
+      PDF: 'enabled',
+      STORAGE: 'cloudinary + fallback',
+      CLOUDINARY: cloudinaryConfigured ? '✓' : '✗'
+    }
+  });
+});
+
+// Armazenamento temporário como fallback
+const pdfStorage = new Map();
+
+// Endpoint para servir PDF (fallback)
 app.get('/comprovante/:id', (req, res) => {
   const { id } = req.params;
   const pdf = pdfStorage.get(id);
@@ -277,24 +338,21 @@ app.get('/comprovante/:id', (req, res) => {
   res.send(pdf.buffer);
 });
 
-// Endpoint de saúde
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: {
-      CLIENT_ID: process.env.CLIENT_ID ? '✓' : '✗',
-      CLIENT_SECRET: process.env.CLIENT_SECRET ? '✓' : '✗',
-      CONTA_CORRENTE: process.env.CONTA_CORRENTE ? '✓' : '✗',
-      PDF: 'enabled',
-      STORAGE: 'memory'
-    }
-  });
-});
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Geração de PDF: Habilitada`);
-  console.log(`Armazenamento: Memória temporária`);
-});// Deploy Cloudinary Thu Jul 17 14:40:28     2025
+  console.log(`Armazenamento: Cloudinary + Fallback local`);
+  
+  const cloudinaryConfigured = !!(
+    process.env.CLOUDINARY_CLOUD_NAME && 
+    process.env.CLOUDINARY_API_KEY && 
+    process.env.CLOUDINARY_API_SECRET
+  );
+  
+  if (cloudinaryConfigured) {
+    console.log('Cloudinary: Configurado ✓');
+  } else {
+    console.log('Cloudinary: Não configurado - usando apenas armazenamento temporário');
+  }
+});
