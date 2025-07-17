@@ -297,4 +297,4 @@ app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Geração de PDF: Habilitada`);
   console.log(`Armazenamento: Memória temporária`);
-});
+});// Deploy Cloudinary Thu Jul 17 14:40:28     2025
