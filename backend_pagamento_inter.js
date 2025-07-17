@@ -5,7 +5,6 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 const { v4: uuidv4 } = require('uuid');
 const PDFDocument = require('pdfkit');
-const { google } = require('googleapis');
 
 const app = express();
 app.use(bodyParser.json());
@@ -19,20 +18,8 @@ const httpsAgent = new https.Agent({
   rejectUnauthorized: false
 });
 
-// Configuração Google Drive
-let drive = null;
-try {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: './google-credentials.json',
-    scopes: ['https://www.googleapis.com/auth/drive.file']
-  });
-  
-  drive = google.drive({ version: 'v3', auth });
-  console.log('Google Drive configurado com sucesso');
-} catch (error) {
-  console.error('Erro ao configurar Google Drive:', error.message);
-  console.log('Continuando sem Google Drive...');
-}
+// Armazenar PDFs temporariamente na memória
+const pdfStorage = new Map();
 
 // Função para formatar valores em Real
 function formatarMoeda(valor) {
@@ -40,53 +27,6 @@ function formatarMoeda(valor) {
     style: 'currency',
     currency: 'BRL'
   }).format(valor);
-}
-
-// Função para salvar no Google Drive
-async function salvarComprovanteDrive(pdfBuffer, nomeArquivo) {
-  if (!drive) {
-    console.log('Google Drive não configurado');
-    return null;
-  }
-  
-  try {
-    const fileMetadata = {
-      name: nomeArquivo,
-      mimeType: 'application/pdf'
-    };
-    
-    // Adicionar à pasta se configurada
-    if (process.env.GOOGLE_DRIVE_FOLDER_ID) {
-      fileMetadata.parents = [process.env.GOOGLE_DRIVE_FOLDER_ID];
-    }
-    
-    const media = {
-      mimeType: 'application/pdf',
-      body: require('stream').Readable.from(pdfBuffer)
-    };
-    
-    const response = await drive.files.create({
-      requestBody: fileMetadata,
-      media: media,
-      fields: 'id, name, webViewLink, webContentLink'
-    });
-    
-    // Tornar o arquivo público
-    await drive.permissions.create({
-      fileId: response.data.id,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone'
-      }
-    });
-    
-    console.log('Arquivo salvo no Drive:', response.data.name);
-    return response.data;
-    
-  } catch (error) {
-    console.error('Erro ao salvar no Drive:', error);
-    return null;
-  }
 }
 
 // Função para gerar PDF do comprovante
@@ -242,31 +182,39 @@ app.post('/pagar', async (req, res) => {
           gerado: false,
           base64: null,
           nome: null,
-          googleDrive: null
+          link: null,
+          download: null
         };
         
         try {
           const pdfBuffer = await gerarComprovantePDF(item, pagamentoPix.data);
+          const pdfId = uuidv4();
           const nomeArquivo = `Comprovante_PIX_${item.chave}_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+          
+          // Armazenar temporariamente
+          pdfStorage.set(pdfId, {
+            buffer: pdfBuffer,
+            nome: nomeArquivo,
+            criado: new Date()
+          });
+          
+          // Limpar PDFs antigos (mais de 1 hora)
+          for (const [id, pdf] of pdfStorage.entries()) {
+            if (new Date() - pdf.criado > 3600000) {
+              pdfStorage.delete(id);
+            }
+          }
           
           comprovanteInfo.gerado = true;
           comprovanteInfo.base64 = pdfBuffer.toString('base64');
           comprovanteInfo.nome = nomeArquivo;
+          comprovanteInfo.link = `https://pagamento-inter.onrender.com/comprovante/${pdfId}`;
+          comprovanteInfo.download = `https://pagamento-inter.onrender.com/comprovante/${pdfId}?download=true`;
           
-          // Salvar no Google Drive
-          const driveFile = await salvarComprovanteDrive(pdfBuffer, nomeArquivo);
-          if (driveFile) {
-            comprovanteInfo.googleDrive = {
-              id: driveFile.id,
-              nome: driveFile.name,
-              link: driveFile.webViewLink,
-              download: driveFile.webContentLink
-            };
-            console.log('Comprovante salvo no Drive com sucesso');
-          }
+          console.log('Comprovante PDF gerado com sucesso');
           
         } catch (pdfError) {
-          console.error('Erro ao gerar/salvar PDF:', pdfError);
+          console.error('Erro ao gerar PDF:', pdfError);
         }
         
         results.push({
@@ -309,6 +257,26 @@ app.post('/pagar', async (req, res) => {
   }
 });
 
+// Endpoint para servir o PDF
+app.get('/comprovante/:id', (req, res) => {
+  const { id } = req.params;
+  const pdf = pdfStorage.get(id);
+  
+  if (!pdf) {
+    return res.status(404).json({ erro: 'Comprovante não encontrado' });
+  }
+  
+  res.setHeader('Content-Type', 'application/pdf');
+  
+  if (req.query.download === 'true') {
+    res.setHeader('Content-Disposition', `attachment; filename="${pdf.nome}"`);
+  } else {
+    res.setHeader('Content-Disposition', `inline; filename="${pdf.nome}"`);
+  }
+  
+  res.send(pdf.buffer);
+});
+
 // Endpoint de saúde
 app.get('/health', (req, res) => {
   res.json({ 
@@ -319,35 +287,14 @@ app.get('/health', (req, res) => {
       CLIENT_SECRET: process.env.CLIENT_SECRET ? '✓' : '✗',
       CONTA_CORRENTE: process.env.CONTA_CORRENTE ? '✓' : '✗',
       PDF: 'enabled',
-      GOOGLE_DRIVE: drive ? '✓' : '✗',
-      GOOGLE_DRIVE_FOLDER: process.env.GOOGLE_DRIVE_FOLDER_ID ? '✓' : '✗'
+      STORAGE: 'memory'
     }
   });
-});
-
-// Endpoint para gerar comprovante sob demanda
-app.post('/comprovante', async (req, res) => {
-  try {
-    const { dadosPagamento, dadosTransacao } = req.body;
-    
-    const pdfBuffer = await gerarComprovantePDF(dadosPagamento, dadosTransacao);
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Comprovante_PIX_${dadosPagamento.chave}.pdf"`);
-    res.send(pdfBuffer);
-    
-  } catch (error) {
-    console.error('Erro ao gerar comprovante:', error);
-    res.status(500).json({
-      status: 'erro',
-      message: error.message
-    });
-  }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Geração de PDF: Habilitada`);
-  console.log(`Google Drive: ${drive ? 'Configurado' : 'Não configurado'}`);
+  console.log(`Armazenamento: Memória temporária`);
 });
