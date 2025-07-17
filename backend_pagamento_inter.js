@@ -47,13 +47,20 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
       public_id: nomeArquivo.replace('.pdf', ''),
       folder: 'comprovantes-pix',
       type: 'upload',
-      overwrite: true
+      format: 'pdf',
+      overwrite: true,
+      flags: 'attachment'
     });
     
     console.log('PDF enviado para Cloudinary:', result.public_id);
     
+    // Criar URLs customizadas
+    const viewUrl = result.secure_url.replace('/upload/', '/upload/fl_attachment:false/');
+    const downloadUrl = result.secure_url;
+    
     return {
-      url: result.secure_url,
+      url: viewUrl,
+      download: downloadUrl,
       publicId: result.public_id,
       size: result.bytes
     };
@@ -81,8 +88,8 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       doc.moveDown();
       doc.fontSize(12)
          .font('Helvetica')
-         .text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, { align: 'right' });
-      doc.text(`Hora: ${new Date().toLocaleTimeString('pt-BR')}`, { align: 'right' });
+         .text(`Data: ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, { align: 'right' });
+      doc.text(`Hora: ${new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, { align: 'right' });
       
       doc.moveDown();
       
@@ -108,7 +115,7 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       doc.text(`Descrição: ${dadosPagamento.descricao || 'Pagamento PIX'}`);
       
       doc.moveDown(0.5);
-      doc.text(`Data do Pagamento: ${dadosPagamento.dataPagamento || new Date().toLocaleDateString('pt-BR')}`);
+      doc.text(`Data do Pagamento: ${dadosPagamento.dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
       
       doc.moveDown();
       
@@ -232,8 +239,8 @@ app.post('/pagar', async (req, res) => {
             comprovanteInfo.gerado = true;
             comprovanteInfo.base64 = pdfBuffer.toString('base64');
             comprovanteInfo.nome = nomeArquivo;
-            comprovanteInfo.link = cloudinaryResult.url;
-            comprovanteInfo.download = cloudinaryResult.url;
+            comprovanteInfo.link = cloudinaryResult.url; // URL para visualizar
+            comprovanteInfo.download = cloudinaryResult.download + '?dl=true'; // URL para download
             comprovanteInfo.cloudinary = cloudinaryResult;
             
             console.log('Comprovante salvo no Cloudinary com sucesso');
