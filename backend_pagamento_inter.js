@@ -297,4 +297,4 @@ app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Geração de PDF: Habilitada`);
   console.log(`Armazenamento: Memória temporária`);
-});
+});// Atualizado Thu Jul 17 13:43:10     2025
