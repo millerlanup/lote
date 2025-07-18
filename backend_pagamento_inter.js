@@ -43,11 +43,19 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
     
     // Upload para Cloudinary
     const result = await cloudinary.uploader.upload(dataUri, {
-      resource_type: 'auto',
+      resource_type: 'raw',
       public_id: nomeArquivo.replace('.pdf', ''),
       folder: 'comprovantes-pix',
       type: 'upload',
+      access_mode: 'public',
       overwrite: true
+    });
+    
+    // Tornar o arquivo público
+    await cloudinary.uploader.explicit(result.public_id, {
+      type: 'upload',
+      resource_type: 'raw',
+      access_mode: 'public'
     });
     
     console.log('PDF enviado para Cloudinary:', result.public_id);
