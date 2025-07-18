@@ -47,8 +47,6 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
       public_id: nomeArquivo.replace('.pdf', ''),
       folder: 'comprovantes-pix',
       type: 'upload',
-      format: 'pdf',
-      access_mode: 'public',
       overwrite: true
     });
     
