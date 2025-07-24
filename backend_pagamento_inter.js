@@ -34,6 +34,23 @@ function formatarMoeda(valor) {
   }).format(valor);
 }
 
+// Função auxiliar para formatar CPF/CNPJ
+function formatarCpfCnpj(documento) {
+  if (!documento) return null;
+  
+  const numeros = documento.replace(/\D/g, '');
+  
+  if (numeros.length === 11) {
+    // CPF: 000.000.000-00
+    return numeros.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  } else if (numeros.length === 14) {
+    // CNPJ: 00.000.000/0000-00
+    return numeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  }
+  
+  return documento;
+}
+
 // Função para fazer upload do PDF para Cloudinary
 async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
   try {
@@ -71,95 +88,253 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
   }
 }
 
-// Função para gerar PDF do comprovante
+// Função para gerar PDF do comprovante com layout melhorado
 async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ 
+        margin: 50,
+        size: 'A4'
+      });
       const chunks = [];
       
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       
-      // Header
-      doc.fontSize(20)
-         .font('Helvetica-Bold')
-         .text('COMPROVANTE DE PAGAMENTO PIX', { align: 'center' });
+      // Cores do tema
+      const corPrimaria = '#1E3A5F'; // Azul escuro
+      const corSecundaria = '#4B7BEC'; // Azul claro
+      const corTexto = '#2C3E50';
+      const corCinza = '#7F8C8D';
       
-      doc.moveDown();
+      // Header com logo e título
+      doc.rect(0, 0, doc.page.width, 120)
+         .fill(corPrimaria);
+      
+      // Logo (texto estilizado por enquanto)
+      doc.fontSize(28)
+         .fillColor('white')
+         .font('Helvetica-Bold')
+         .text('LANUP', 50, 40);
+      
       doc.fontSize(12)
+         .fillColor('white')
          .font('Helvetica')
-         .text(`Data: ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, { align: 'right' });
-      doc.text(`Hora: ${new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`, { align: 'right' });
+         .text('Intermediário de Pagamentos', 50, 75);
       
-      doc.moveDown();
-      
-      // Linha divisória
-      doc.moveTo(50, doc.y)
-         .lineTo(550, doc.y)
-         .stroke();
-      
-      doc.moveDown();
-      
-      // Dados do Pagamento
-      doc.fontSize(14)
+      // Título do comprovante
+      doc.fontSize(18)
+         .fillColor('white')
          .font('Helvetica-Bold')
-         .text('DADOS DO PAGAMENTO');
+         .text('COMPROVANTE DE TRANSFERÊNCIA PIX', 250, 50);
       
-      doc.fontSize(11)
-         .font('Helvetica');
+      // Box de informações principais
+      doc.rect(30, 140, doc.page.width - 60, 100)
+         .fillAndStroke('#F8F9FA', '#E9ECEF');
       
-      doc.moveDown(0.5);
-      doc.text(`Valor: ${formatarMoeda(dadosPagamento.valor)}`);
-      
-      doc.moveDown(0.5);
-      doc.text(`Descrição: ${dadosPagamento.descricao || 'Pagamento PIX'}`);
-      
-      doc.moveDown(0.5);
-      doc.text(`Data do Pagamento: ${dadosPagamento.dataPagamento || new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
-      
-      doc.moveDown();
-      
-      // Dados do Destinatário
+      // Status da transação
       doc.fontSize(14)
+         .fillColor('#27AE60')
          .font('Helvetica-Bold')
-         .text('DADOS DO DESTINATÁRIO');
+         .text('✓ TRANSFERÊNCIA REALIZADA COM SUCESSO', 50, 160);
       
-      doc.fontSize(11)
-         .font('Helvetica');
-      
-      doc.moveDown(0.5);
-      doc.text(`Chave PIX: ${dadosPagamento.chave}`);
-      
-      doc.moveDown();
-      
-      // Dados da Transação
-      doc.fontSize(14)
+      // Valor em destaque
+      doc.fontSize(24)
+         .fillColor(corPrimaria)
          .font('Helvetica-Bold')
-         .text('DADOS DA TRANSAÇÃO');
+         .text(`R$ ${dadosPagamento.valor.toFixed(2).replace('.', ',')}`, 50, 190);
       
-      doc.fontSize(11)
-         .font('Helvetica');
+      // Data e hora
+      const dataHora = new Date().toLocaleString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        day: '2d',
+        month: '2d',
+        year: 'numeric',
+        hour: '2d',
+        minute: '2d',
+        second: '2d'
+      });
       
-      doc.moveDown(0.5);
-      doc.text(`Código de Solicitação: ${dadosResposta.codigoSolicitacao || 'N/A'}`);
-      
-      doc.moveDown(0.5);
-      doc.text(`Status: REALIZADO COM SUCESSO`);
-      
-      // Footer
-      doc.moveDown(2);
       doc.fontSize(10)
+         .fillColor(corCinza)
          .font('Helvetica')
-         .fillColor('gray')
-         .text('Este comprovante foi gerado automaticamente.', {
-           align: 'center'
+         .text(`Data/Hora: ${dataHora}`, 400, 160);
+      
+      // Código de identificação
+      doc.text(`Código: ${dadosResposta.codigoSolicitacao || 'N/A'}`, 400, 175);
+      
+      // Seção: DADOS DO REMETENTE
+      doc.fontSize(12)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text('DADOS DO REMETENTE', 50, 270);
+      
+      doc.moveTo(50, 285)
+         .lineTo(550, 285)
+         .stroke(corSecundaria);
+      
+      // Informações do remetente em duas colunas
+      doc.fontSize(10)
+         .fillColor(corCinza)
+         .font('Helvetica');
+      
+      const coluna1X = 50;
+      const coluna2X = 300;
+      let yPos = 300;
+      
+      // Coluna 1
+      doc.text('INSTITUIÇÃO FINANCEIRA', coluna1X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('LANUP PAGAMENTOS S.A.', coluna1X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CPF/CNPJ', coluna1X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('XX.XXX.XXX/0001-XX', coluna1X, yPos + 47);
+      
+      // Coluna 2
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('AGÊNCIA', coluna2X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('0001', coluna2X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CONTA', coluna2X + 100, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('47775967', coluna2X + 100, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('NOME', coluna2X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('LANUP SERVIÇOS E CONSULTORIA LTDA', coluna2X, yPos + 47);
+      
+      // Seção: DADOS DO DESTINATÁRIO
+      yPos = 380;
+      doc.fontSize(12)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text('DADOS DO DESTINATÁRIO', 50, yPos);
+      
+      doc.moveTo(50, yPos + 15)
+         .lineTo(550, yPos + 15)
+         .stroke(corSecundaria);
+      
+      yPos += 30;
+      
+      // Informações do destinatário
+      doc.fontSize(10)
+         .fillColor(corCinza)
+         .font('Helvetica');
+      
+      doc.text('INSTITUIÇÃO FINANCEIRA', coluna1X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosResposta.dadosDestinatario?.banco || 'BANCO INTER S.A.', coluna1X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CHAVE PIX', coluna2X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosPagamento.chave, coluna2X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('NOME', coluna1X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosResposta.dadosDestinatario?.nome || 'NOME DO BENEFICIÁRIO', coluna1X, yPos + 47);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CPF/CNPJ', coluna2X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(formatarCpfCnpj(dadosResposta.dadosDestinatario?.documento) || '***.***.***-**', coluna2X, yPos + 47);
+      
+      // Seção: DADOS DA TRANSFERÊNCIA
+      yPos = 490;
+      doc.fontSize(12)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text('DADOS DA TRANSFERÊNCIA', 50, yPos);
+      
+      doc.moveTo(50, yPos + 15)
+         .lineTo(550, yPos + 15)
+         .stroke(corSecundaria);
+      
+      yPos += 30;
+      
+      doc.fontSize(10)
+         .fillColor(corCinza)
+         .font('Helvetica');
+      
+      doc.text('VALOR', coluna1X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(`R$ ${dadosPagamento.valor.toFixed(2).replace('.', ',')}`, coluna1X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('DATA/HORA', coluna2X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dataHora, coluna2X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CÓDIGO DE IDENTIFICAÇÃO', coluna1X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosResposta.codigoSolicitacao || 'N/A', coluna1X, yPos + 47);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('DESCRIÇÃO', coluna1X, yPos + 70);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosPagamento.descricao || 'Pagamento via PIX', coluna1X, yPos + 82);
+      
+      // Linha de separação
+      doc.moveTo(50, 650)
+         .lineTo(550, 650)
+         .stroke('#E9ECEF');
+      
+      // Rodapé
+      doc.fontSize(8)
+         .fillColor(corCinza)
+         .font('Helvetica')
+         .text('Comprovante gerado em: ' + dataHora, 50, 670, {
+           align: 'center',
+           width: 500
          });
       
-      doc.moveDown(0.5);
-      doc.text('Banco Inter S.A. - CNPJ: 00.416.968/0001-01', {
-        align: 'center'
-      });
+      doc.text('Este é um comprovante válido de transferência PIX', 50, 685, {
+           align: 'center',
+           width: 500
+         });
+      
+      doc.text('Central de Atendimento: 0800 123 4567 | www.lanup.com.br', 50, 700, {
+           align: 'center',
+           width: 500
+         });
+      
+      // QR Code fake (por enquanto, um quadrado)
+      doc.rect(450, 520, 100, 100)
+         .fillAndStroke('#F8F9FA', '#E9ECEF');
+      
+      doc.fontSize(8)
+         .fillColor(corCinza)
+         .text('QR Code', 475, 570);
       
       doc.end();
     } catch (error) {
