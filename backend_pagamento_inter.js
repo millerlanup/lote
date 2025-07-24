@@ -37,14 +37,27 @@ function formatarMoeda(valor) {
   }).format(valor);
 }
 
+// Função auxiliar para formatar CPF/CNPJ
+function formatarCpfCnpj(documento) {
+  if (!documento) return '***.***.***-**';
+  
+  const numeros = documento.replace(/\D/g, '');
+  
+  if (numeros.length === 11) {
+    return numeros.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  } else if (numeros.length === 14) {
+    return numeros.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  }
+  
+  return '***.***.***-**';
+}
+
 // Função para fazer upload do PDF para Cloudinary
 async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
   try {
-    // Converter buffer para base64
     const base64 = pdfBuffer.toString('base64');
     const dataUri = `data:application/pdf;base64,${base64}`;
     
-    // Upload para Cloudinary
     const result = await cloudinary.uploader.upload(dataUri, {
       resource_type: 'raw',
       public_id: nomeArquivo.replace('.pdf', ''),
@@ -54,7 +67,6 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
       overwrite: true
     });
     
-    // Tornar o arquivo público
     await cloudinary.uploader.explicit(result.public_id, {
       type: 'upload',
       resource_type: 'raw',
@@ -74,48 +86,256 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
   }
 }
 
-// Função SIMPLIFICADA para gerar PDF (VERSÃO DE TESTE)
+// Função para gerar PDF do comprovante com layout melhorado
 async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
   return new Promise((resolve, reject) => {
     try {
-      console.log('=== INICIANDO GERAÇÃO DE PDF SIMPLIFICADO ===');
-      console.log('Dados recebidos:', { dadosPagamento, dadosResposta });
+      console.log('=== INICIANDO GERAÇÃO DE PDF PROFISSIONAL ===');
       
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ 
+        margin: 50,
+        size: 'A4'
+      });
       const chunks = [];
       
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => {
-        console.log('PDF finalizado, total de chunks:', chunks.length);
-        const buffer = Buffer.concat(chunks);
-        console.log('Tamanho do buffer:', buffer.length);
-        resolve(buffer);
+        console.log('PDF profissional finalizado');
+        resolve(Buffer.concat(chunks));
       });
       
-      // PDF super simples para teste
-      doc.fontSize(20)
-         .text('COMPROVANTE DE PAGAMENTO PIX', 50, 50, { align: 'center' });
+      // Cores do tema
+      const corPrimaria = '#1E3A5F';
+      const corSecundaria = '#4B7BEC';
+      const corTexto = '#2C3E50';
+      const corCinza = '#7F8C8D';
+      const corVerde = '#27AE60';
+      const corFundo = '#F8F9FA';
+      const corBorda = '#E9ECEF';
       
-      doc.moveDown(2);
+      // Header com fundo azul
+      doc.rect(0, 0, doc.page.width, 120)
+         .fill(corPrimaria);
       
+      // Logo LANUP
+      doc.fontSize(32)
+         .fillColor('white')
+         .font('Helvetica-Bold')
+         .text('LANUP', 50, 40);
+      
+      doc.fontSize(12)
+         .fillColor('white')
+         .font('Helvetica')
+         .text('Intermediário de Pagamentos', 50, 75);
+      
+      // Título
+      doc.fontSize(16)
+         .fillColor('white')
+         .font('Helvetica-Bold')
+         .text('COMPROVANTE DE TRANSFERÊNCIA PIX', 280, 50);
+      
+      // Box principal com status
+      doc.rect(30, 140, doc.page.width - 60, 100)
+         .fillAndStroke(corFundo, corBorda);
+      
+      // Status de sucesso
       doc.fontSize(14)
-         .text(`Valor: R$ ${dadosPagamento.valor.toFixed(2)}`, 50, 150);
+         .fillColor(corVerde)
+         .font('Helvetica-Bold')
+         .text('✓ TRANSFERÊNCIA REALIZADA COM SUCESSO', 50, 160);
       
-      doc.text(`Chave PIX: ${dadosPagamento.chave}`, 50, 180);
+      // Valor
+      doc.fontSize(28)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text(formatarMoeda(dadosPagamento.valor), 50, 190);
       
-      doc.text(`Status: PAGO COM SUCESSO`, 50, 210);
+      // Data e hora
+      const dataHora = new Date().toLocaleString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        day: '2d',
+        month: '2d', 
+        year: 'numeric',
+        hour: '2d',
+        minute: '2d',
+        second: '2d'
+      });
       
-      doc.text(`Código: ${dadosResposta.codigoSolicitacao || 'N/A'}`, 50, 240);
+      doc.fontSize(10)
+         .fillColor(corCinza)
+         .font('Helvetica')
+         .text(`Data/Hora: ${dataHora}`, 400, 160);
       
-      doc.text(`Data: ${new Date().toLocaleString('pt-BR')}`, 50, 270);
+      doc.text(`Código: ${dadosResposta.codigoSolicitacao || 'N/A'}`, 400, 175);
+      
+      // DADOS DO REMETENTE
+      doc.fontSize(12)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text('DADOS DO REMETENTE', 50, 270);
+      
+      doc.moveTo(50, 285)
+         .lineTo(550, 285)
+         .stroke(corSecundaria);
+      
+      const coluna1X = 50;
+      const coluna2X = 300;
+      let yPos = 300;
+      
+      doc.fontSize(9)
+         .fillColor(corCinza)
+         .font('Helvetica')
+         .text('INSTITUIÇÃO FINANCEIRA', coluna1X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('LANUP PAGAMENTOS S.A.', coluna1X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CNPJ', coluna1X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('XX.XXX.XXX/0001-XX', coluna1X, yPos + 47);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('AGÊNCIA / CONTA', coluna2X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('0001 / 47775967', coluna2X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('NOME', coluna2X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('LANUP SERVIÇOS E CONSULTORIA LTDA', coluna2X, yPos + 47);
+      
+      // DADOS DO DESTINATÁRIO
+      yPos = 380;
+      doc.fontSize(12)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text('DADOS DO DESTINATÁRIO', 50, yPos);
+      
+      doc.moveTo(50, yPos + 15)
+         .lineTo(550, yPos + 15)
+         .stroke(corSecundaria);
+      
+      yPos += 30;
+      
+      doc.fontSize(9)
+         .fillColor(corCinza)
+         .font('Helvetica')
+         .text('INSTITUIÇÃO FINANCEIRA', coluna1X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('BANCO INTER S.A.', coluna1X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CHAVE PIX', coluna2X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosPagamento.chave, coluna2X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('NOME', coluna1X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('NOME DO BENEFICIÁRIO', coluna1X, yPos + 47);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CPF/CNPJ', coluna2X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text('***.***.***-**', coluna2X, yPos + 47);
+      
+      // DADOS DA TRANSFERÊNCIA
+      yPos = 490;
+      doc.fontSize(12)
+         .fillColor(corPrimaria)
+         .font('Helvetica-Bold')
+         .text('DADOS DA TRANSFERÊNCIA', 50, yPos);
+      
+      doc.moveTo(50, yPos + 15)
+         .lineTo(550, yPos + 15)
+         .stroke(corSecundaria);
+      
+      yPos += 30;
+      
+      doc.fontSize(9)
+         .fillColor(corCinza)
+         .font('Helvetica');
+      
+      // Duas colunas de informações
+      doc.text('VALOR', coluna1X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(formatarMoeda(dadosPagamento.valor), coluna1X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('DATA/HORA', coluna2X, yPos);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dataHora, coluna2X, yPos + 12);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('CÓDIGO DE IDENTIFICAÇÃO', coluna1X, yPos + 35);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosResposta.codigoSolicitacao || 'N/A', coluna1X, yPos + 47);
+      
+      doc.fillColor(corCinza)
+         .font('Helvetica')
+         .text('DESCRIÇÃO', coluna1X, yPos + 70);
+      doc.fillColor(corTexto)
+         .font('Helvetica-Bold')
+         .text(dadosPagamento.descricao || 'Pagamento via PIX', coluna1X, yPos + 82);
+      
+      // QR Code placeholder
+      doc.rect(450, 520, 100, 100)
+         .fillAndStroke(corFundo, corBorda);
+      
+      doc.fontSize(8)
+         .fillColor(corCinza)
+         .font('Helvetica')
+         .text('QR Code', 475, 570, {
+           width: 50,
+           align: 'center'
+         });
+      
+      // Rodapé
+      doc.moveTo(50, 660)
+         .lineTo(550, 660)
+         .stroke(corBorda);
+      
+      doc.fontSize(8)
+         .fillColor(corCinza)
+         .font('Helvetica')
+         .text('Comprovante gerado em: ' + dataHora, 50, 675, {
+           align: 'center',
+           width: 500
+         });
+      
+      doc.text('Este é um comprovante válido de transferência PIX', 50, 690, {
+           align: 'center',
+           width: 500
+         });
+      
+      doc.text('Central de Atendimento: 0800 123 4567 | www.lanup.com.br', 50, 705, {
+           align: 'center',
+           width: 500
+         });
       
       doc.end();
       
-      console.log('doc.end() foi chamado');
-      
     } catch (error) {
-      console.error('ERRO na geração do PDF:', error);
-      console.error('Stack:', error.stack);
+      console.error('Erro na geração do PDF:', error);
       reject(error);
     }
   });
@@ -187,8 +407,6 @@ app.post('/pagar', async (req, res) => {
         
         try {
           console.log('=== TENTANDO GERAR PDF ===');
-          console.log('Item:', item);
-          console.log('Resposta PIX:', pagamentoPix.data);
           
           const pdfBuffer = await gerarComprovantePDF(item, pagamentoPix.data);
           console.log('✅ PDF gerado com sucesso, tamanho:', pdfBuffer.length, 'bytes');
@@ -210,7 +428,7 @@ app.post('/pagar', async (req, res) => {
             
             console.log('✅ Comprovante salvo no Cloudinary:', cloudinaryResult.url);
           } else {
-            // Fallback: usar armazenamento temporário
+            // Fallback
             const pdfId = uuidv4();
             pdfStorage.set(pdfId, {
               buffer: pdfBuffer,
@@ -223,20 +441,14 @@ app.post('/pagar', async (req, res) => {
             comprovanteInfo.link = `https://pagamento-inter.onrender.com/comprovante/${pdfId}`;
             comprovanteInfo.download = `https://pagamento-inter.onrender.com/comprovante/${pdfId}?download=true`;
             
-            console.log('⚠️ Usando armazenamento temporário (Cloudinary falhou)');
-            console.log('Link temporário:', comprovanteInfo.link);
+            console.log('⚠️ Usando armazenamento temporário');
           }
           
         } catch (pdfError) {
-          console.error('❌ ERRO AO GERAR/ENVIAR PDF:');
-          console.error('Tipo de erro:', pdfError.constructor.name);
-          console.error('Mensagem:', pdfError.message);
-          console.error('Stack:', pdfError.stack);
-          
+          console.error('❌ ERRO AO GERAR/ENVIAR PDF:', pdfError.message);
           comprovanteInfo.erro = {
             mensagem: pdfError.message,
-            tipo: pdfError.constructor.name,
-            stack: pdfError.stack
+            tipo: pdfError.constructor.name
           };
         }
         
