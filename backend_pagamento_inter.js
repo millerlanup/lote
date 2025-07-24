@@ -71,6 +71,19 @@ async function uploadPDFCloudinary(pdfBuffer, nomeArquivo) {
   }
 }
 
+// Função para determinar o banco baseado no tipo de chave
+function identificarBanco(chave, tipoChave) {
+  // Esta é uma função simplificada - idealmente consultaria uma API
+  // Por enquanto, vamos usar lógica básica
+  if (tipoChave === 'EMAIL') {
+    if (chave.includes('@nubank')) return 'NUBANK';
+    if (chave.includes('@inter')) return 'BANCO INTER S.A.';
+  }
+  
+  // Se não conseguir identificar, retorna genérico
+  return 'INSTITUIÇÃO FINANCEIRA';
+}
+
 // Função SIMPLES para gerar PDF - PRETO E BRANCO
 async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
   return new Promise((resolve, reject) => {
@@ -89,9 +102,17 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
         resolve(Buffer.concat(chunks));
       });
       
-      // Data e hora formatada corretamente
+      // Data e hora com timezone correto de São Paulo
       const agora = new Date();
-      const dataHora = `${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR')}`;
+      const dataHoraBrasil = agora.toLocaleString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       
       // CABEÇALHO
       doc.fontSize(20)
@@ -123,7 +144,7 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       
       doc.text(`Status: PAGAMENTO REALIZADO COM SUCESSO`);
       doc.text(`Valor: ${formatarMoeda(dadosPagamento.valor)}`);
-      doc.text(`Data/Hora: ${dataHora}`);
+      doc.text(`Data/Hora: ${dataHoraBrasil}`);
       doc.text(`Código de Solicitação: ${dadosResposta.codigoSolicitacao || 'N/A'}`);
       doc.text(`Descrição: ${dadosPagamento.descricao || 'Pagamento via PIX'}`);
       
@@ -136,7 +157,7 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       
       doc.moveDown();
       
-      // SEÇÃO 2: DADOS DO PAGADOR
+      // SEÇÃO 2: DADOS DO PAGADOR (CORRIGIDO)
       doc.fontSize(14)
          .font('Helvetica-Bold')
          .text('DADOS DO PAGADOR');
@@ -146,11 +167,11 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       doc.fontSize(11)
          .font('Helvetica');
       
-      doc.text(`Instituição: LANUP PAGAMENTOS S.A.`);
+      doc.text(`Instituição: BANCO INTER S.A.`);
       doc.text(`CNPJ: XX.XXX.XXX/0001-XX`);
       doc.text(`Agência: 0001`);
       doc.text(`Conta: 47775967`);
-      doc.text(`Nome: LANUP SERVIÇOS E CONSULTORIA LTDA`);
+      doc.text(`Nome: LANUP TECNOLOGIA`); // CORRIGIDO
       
       doc.moveDown();
       
@@ -171,9 +192,14 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       doc.fontSize(11)
          .font('Helvetica');
       
-      doc.text(`Instituição: BANCO INTER S.A.`);
+      // Identificar banco baseado no tipo de chave
+      const bancoRecebedor = dadosPagamento.tipochave ? 
+        identificarBanco(dadosPagamento.chave, dadosPagamento.tipochave) : 
+        'INSTITUIÇÃO FINANCEIRA';
+      
+      doc.text(`Instituição: ${bancoRecebedor}`);
       doc.text(`Chave PIX: ${dadosPagamento.chave}`);
-      doc.text(`Nome: NOME DO BENEFICIÁRIO`);
+      doc.text(`Nome: ${dadosPagamento.nomerecebedor || 'NOME DO BENEFICIÁRIO'}`); // USANDO NOME DA PLANILHA
       doc.text(`CPF/CNPJ: ***.***.***-**`);
       
       doc.moveDown(2);
@@ -189,7 +215,7 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       doc.fontSize(9)
          .font('Helvetica')
          .text('Este comprovante foi gerado automaticamente.', { align: 'center' });
-      doc.text(`Comprovante gerado em: ${dataHora}`, { align: 'center' });
+      doc.text(`Comprovante gerado em: ${dataHoraBrasil}`, { align: 'center' });
       doc.text('LANUP - www.lanup.com.br', { align: 'center' });
       
       doc.end();
@@ -268,7 +294,14 @@ app.post('/pagar', async (req, res) => {
         try {
           console.log('Tentando gerar PDF...');
           
-          const pdfBuffer = await gerarComprovantePDF(item, pagamentoPix.data);
+          // Adicionar dados extras do pagamento ao item para o PDF
+          const dadosParaPDF = {
+            ...item,
+            nomerecebedor: item.nomerecebedor || item.nome_recebedor || item.nomeRecebedor,
+            tipochave: item.tipochave || item.tipo_chave || item.tipoChave
+          };
+          
+          const pdfBuffer = await gerarComprovantePDF(dadosParaPDF, pagamentoPix.data);
           console.log('✅ PDF gerado com sucesso, tamanho:', pdfBuffer.length, 'bytes');
           
           const nomeArquivo = `Comprovante_PIX_${item.chave}_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
