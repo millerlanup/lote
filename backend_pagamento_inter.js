@@ -78,7 +78,12 @@ function identificarBanco(chave, tipoChave) {
   if (tipoChave === 'EMAIL') {
     if (chave.includes('@nubank')) return 'NUBANK';
     if (chave.includes('@inter')) return 'BANCO INTER S.A.';
+    if (chave.includes('@picpay')) return 'PICPAY';
+    if (chave.includes('@mercadopago')) return 'MERCADO PAGO';
   }
+  
+  // Para telefone, não temos como identificar sem API
+  // Para CPF/CNPJ também não
   
   // Se não conseguir identificar, retorna genérico
   return 'INSTITUIÇÃO FINANCEIRA';
@@ -199,7 +204,7 @@ async function gerarComprovantePDF(dadosPagamento, dadosResposta) {
       
       doc.text(`Instituição: ${bancoRecebedor}`);
       doc.text(`Chave PIX: ${dadosPagamento.chave}`);
-      doc.text(`Nome: ${dadosPagamento.nomerecebedor || 'NOME DO BENEFICIÁRIO'}`); // USANDO NOME DA PLANILHA
+      doc.text(`Nome: ${dadosPagamento.nomeRecebedor || 'NOME DO BENEFICIÁRIO'}`); // USANDO NOME DA PLANILHA
       doc.text(`CPF/CNPJ: ***.***.***-**`);
       
       doc.moveDown(2);
@@ -297,8 +302,8 @@ app.post('/pagar', async (req, res) => {
           // Adicionar dados extras do pagamento ao item para o PDF
           const dadosParaPDF = {
             ...item,
-            nomerecebedor: item.nomerecebedor || item.nome_recebedor || item.nomeRecebedor,
-            tipochave: item.tipochave || item.tipo_chave || item.tipoChave
+            nomeRecebedor: item.nomeRecebedor || '',
+            tipoChave: item.tipoChave || 'CPF'
           };
           
           const pdfBuffer = await gerarComprovantePDF(dadosParaPDF, pagamentoPix.data);
@@ -348,7 +353,11 @@ app.post('/pagar', async (req, res) => {
           valor: item.valor,
           status: 'sucesso',
           response: pagamentoPix.data,
-          comprovante: comprovanteInfo
+          comprovante: comprovanteInfo,
+          // Passar dados extras para os logs
+          nomeRecebedor: item.nomeRecebedor || '',
+          tipoChave: item.tipoChave || 'CPF',
+          lote: item.lote || ''
         });
         
       } catch (error) {
