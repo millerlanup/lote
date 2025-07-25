@@ -357,7 +357,8 @@ app.post('/pagar', async (req, res) => {
           // Passar dados extras para os logs
           nomeRecebedor: item.nomeRecebedor || '',
           tipoChave: item.tipoChave || 'CPF',
-          lote: item.lote || ''
+          lote: item.lote || '',
+          codigoCliente: item.codigoCliente || ''
         });
         
       } catch (error) {
